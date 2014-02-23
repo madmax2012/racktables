@@ -64,7 +64,8 @@ function connectDB()
 		$drvoptions[PDO::MYSQL_ATTR_MAX_BUFFER_SIZE] = $pdo_bufsize;
 	try
 	{
-		$dbxlink = new PDO ($pdo_dsn, $db_username, $db_password, $drvoptions);
+		$dbxlink = new PDO_filter_locking ($pdo_dsn, $db_username, $db_password);
+		//$dbxlink = new PDO ($pdo_dsn, $db_username, $db_password, $drvoptions);
 	}
 	catch (PDOException $e)
 	{
@@ -85,5 +86,51 @@ function fileSearchExists ($filename)
 	}
 	return file_exists ($filename);
 }
+
+
+//PATCHED
+class PDO_filter_locking extends PDO {
+	// Filter out LOCK TABLES|UNLOCK TABLES to make transactions work
+	// http://dev.mysql.com/doc/refman/5.1/en/lock-tables-and-transactions.html
+	// If we want to rollback we can not use Table LOCKING the following helps to filter these commands
+	//
+	private $filter_locks = FALSE;
+	private $error_log_filtered_commands = FALSE;
+
+	function set_error_log_filtered_commands ($set=TRUE)
+	{
+		return $this->error_log_filtered_commands = $set;
+	}
+
+	function set_filter_locks ($set=TRUE)
+	{
+		return $this->filter_locks = $set;
+	}
+
+	function exec ($command)
+	{
+		if ($this->filter_locks)
+		{
+			if( preg_match("/^(LOCK TABLES|UNLOCK TABLES)/i", $command))
+			{
+				if ($this->error_log_filtered_commands)
+					error_log("filtered $command");
+				return 0;
+			}
+		}
+		return parent::exec($command);
+	}
+
+	function beginTransaction ()
+	{
+		if ($this->filter_locks)
+			$this->exec("UNLOCK TABLES");
+		return parent::beginTransaction ();
+	}
+}
+
+
+
+
 
 ?>
